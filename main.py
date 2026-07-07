@@ -19,10 +19,10 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 @bot.command(name="reel")
 async def reel(ctx, link: str):
     username = ctx.author.name
-    print(f"Received request from {username} for link: {link}")
+    
     fetched_video_path = await fetch_reels_video(link, username)
     await send_video(ctx, fetched_video_path)
-    print(f"Sent video to {username}")
+   
     if Path(fetched_video_path).exists():
         os.remove(fetched_video_path)
 
