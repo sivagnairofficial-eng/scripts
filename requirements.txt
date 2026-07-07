@@ -1,1 +1,4 @@
-discord
+discord.py==2.7.1
+discord==2.3.2
+yt-dlp==2026.7.4
+imageio-ffmpeg==0.6.0
