@@ -22,6 +22,8 @@ async def reel(ctx, link: str):
     
     fetched_video_path = await fetch_reels_video(link, username)
     await send_video(ctx, fetched_video_path)
+
+    await ctx.message.delete()
    
     if Path(fetched_video_path).exists():
         os.remove(fetched_video_path)
