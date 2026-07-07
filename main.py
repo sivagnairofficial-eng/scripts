@@ -45,5 +45,8 @@ def process_video(url, username):
 
 async def send_video(ctx, video_path):
     await ctx.send(file=discord.File(video_path))
+import os
 
+print("DISCORD_TOKEN exists:", "DISCORD_TOKEN" in os.environ)
+print("TOKEN:", repr(TOKEN))
 bot.run(TOKEN)
