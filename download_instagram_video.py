@@ -14,7 +14,7 @@ from urllib.error import HTTPError, URLError
 try:
     import yt_dlp
 except ImportError:  # pragma: no cover
-    print("yt_dlp module not found. Falling back to manual download method.")
+    
     yt_dlp = None
 
 try:
