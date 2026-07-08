@@ -1,6 +1,20 @@
 #!/usr/bin/env python3
 
+"""Instagram video downloader (yt-dlp first, GraphQL fallback).
+
+Features:
+- Uses yt-dlp to download and merge video+audio (format: "bv*+ba/b").
+- Detects FFmpeg on PATH, from imageio-ffmpeg, or via environment/configured path.
+- Falls back to GraphQL extraction only when yt-dlp fails to extract the post.
+- Clear logging and error classification for common failure modes.
+
+Compatible: Windows, Linux, Railway (Nixpacks), Python 3.11+
+"""
+
+from typing import Optional, Dict
+
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -13,118 +27,214 @@ from urllib.error import HTTPError, URLError
 
 try:
     import yt_dlp
-except ImportError:  # pragma: no cover
-    
+except Exception:  # pragma: no cover - allow module to run without yt-dlp for fallback
     yt_dlp = None
 
 try:
     import imageio_ffmpeg
-except ImportError:  # pragma: no cover
+except Exception:
     imageio_ffmpeg = None
+
+# Default ffmpeg directory (can be overridden via env FFMPEG_PATH)
+DEFAULT_FFMPEG_LOC = os.environ.get("FFMPEG_PATH", "")
 
 
 def extract_shortcode(url: str) -> str:
+    """Extract Instagram shortcode from a post or reel URL."""
     match = re.search(r"/(p|reel|reels)/([a-zA-Z0-9_-]+)", url)
     if not match or not match.group(2):
         raise ValueError("Invalid Instagram URL. Expected a post or reel URL.")
-
     shortcode = match.group(2)
     if shortcode.lower() == "shortcode":
-        raise ValueError(
-            "Please replace the placeholder SHORTCODE with a real Instagram shortcode or URL."
-        )
-
+        raise ValueError("Replace placeholder SHORTCODE with a real shortcode or URL.")
     return shortcode
 
 
-def build_graphql_payload(shortcode: str) -> str:
+def build_graphql_payload(shortcode: str) -> bytes:
+    """Build the POST body for the GraphQL fallback payload."""
     return urlencode(
         {
             "av": "0",
             "__d": "www",
             "__user": "0",
             "__a": "1",
-            "__req": "b",
-            "__hs": "20183.HYP:instagram_web_pkg.2.1...0",
-            "dpr": "3",
-            "__ccg": "GOOD",
-            "__rev": "1021613311",
-            "__s": "hm5eih:ztapmw:x0losd",
-            "__hsi": "7489787314313612244",
-            "__dyn": "7xeUjG1mxu1syUbFp41twpUnwgU7SbzEdF8aUco2qwJw5ux609vCwjE1EE2Cw8G11wBz81s8hwGxu786a3a1YwBgao6C0Mo2swtUd8-U2zxe2GewGw9a361qw8Xxm16wa-0oa2-azo7u3C2u2J0bS1LwTwKG1pg2fwxyo6O1FwlA3a3zhA6bwIxe6V8aUuwm8jwhU3cyVrDyo",
-            "__csr": "goMJ6MT9Z48KVkIBBvRfqKOkinBtG-FfLaRgG-lZ9Qji9XGexh7VozjHRKq5J6KVqjQdGl2pAFmvK5GWGXyk8h9GA-m6V5yF4UWagnJzazAbZ5osXuFkVeGCHG8GF4l5yp9oOezpo88PAlZ1Pxa5bxGQ7o9VrFbg-8wwxp1G2acxacGVQ00jyoE0ijonyXwfwEnwWwkA2m0dLw3tE1I80hCg8UeU4Ohox0clAhAtsM0iCA9wap4DwhS1fxW0fLhpRB51m13xC3e0h2t2H801HQw1bu02j-",
-            "__comet_req": "7",
-            "lsd": "AVrqPT0gJDo",
-            "jazoest": "2946",
-            "__spin_r": "1021613311",
-            "__spin_b": "trunk",
-            "__spin_t": "1743852001",
-            "__crn": "comet.igweb.PolarisPostRoute",
-            "fb_api_caller_class": "RelayModern",
-            "fb_api_req_friendly_name": "PolarisPostActionLoadPostQueryQuery",
-            "variables": json.dumps(
-                {
-                    "shortcode": shortcode,
-                    "fetch_tagged_user_count": None,
-                    "hoisted_comment_id": None,
-                    "hoisted_reply_id": None,
-                }
-            ),
-            "server_timestamps": "true",
-            "doc_id": "8845758582119845",
+            "variables": json.dumps({"shortcode": shortcode}),
         },
         doseq=True,
     ).encode("utf-8")
 
 
-def fetch_instagram_media(url: str) -> str:
-    print("ENTERED fetch_instagram_media", flush=True)
-    shortcode = extract_shortcode(url)
+def find_ffmpeg_binary(configured_path: Optional[str] = None) -> Optional[str]:
+    """Detect an ffmpeg executable.
 
-    if yt_dlp is None:
-        print("yt_dlp is not available")
+    Checks PATH, configured_path, DEFAULT_FFMPEG_LOC, and imageio_ffmpeg.
+    Returns the path to the executable or None.
+    Prints which candidate was chosen.
+    """
+    candidates = []
 
-    if yt_dlp is not None:
+    # 1) explicit configured path (env or passed)
+    if configured_path:
+        candidates.append(configured_path)
+
+    # 2) environment override
+    env_path = os.environ.get("FFMPEG_PATH")
+    if env_path:
+        candidates.append(env_path)
+
+    # 3) default variable (from earlier code)
+    if DEFAULT_FFMPEG_LOC:
+        candidates.append(DEFAULT_FFMPEG_LOC)
+
+    # 4) PATH lookups
+    which = shutil.which("ffmpeg") or shutil.which("ffmpeg.exe")
+    if which:
+        candidates.insert(0, which)
+
+    # 5) imageio-ffmpeg
+    if imageio_ffmpeg is not None:
         try:
-            with yt_dlp.YoutubeDL({"quiet": True, "skip_download": True, "noplaylist": True}) as ydl:
-                info = ydl.extract_info(url, download=False)
+            exe = imageio_ffmpeg.get_ffmpeg_exe()
+            if exe:
+                candidates.append(exe)
+        except Exception:
+            pass
+
+    # Normalize and find first usable executable
+    for cand in candidates:
+        if not cand:
+            continue
+        p = Path(cand)
+
+        # If candidate is a directory, look for ffmpeg/ffmpeg.exe inside
+        if p.is_dir():
+            exe = p / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+            if exe.exists() and exe.is_file():
+                if _validate_ffmpeg_executable(exe):
+                    print(f"Using ffmpeg: {exe}")
+                    return str(exe)
+                continue
+
+        # If candidate is a file path, validate it
+        if p.is_file():
+            if _validate_ffmpeg_executable(p):
+                print(f"Using ffmpeg: {p}")
+                return str(p)
+            continue
+
+        # If candidate is a name or PATH entry, resolve it
+        which_path = shutil.which(str(p))
+        if which_path:
+            exe = Path(which_path)
+            if _validate_ffmpeg_executable(exe):
+                print(f"Using ffmpeg: {exe}")
+                return str(exe)
+
+    print("FFmpeg executable not found on PATH or configured locations.")
+    return None
+
+
+def classify_error(exc: Exception) -> str:
+    """Map common errors to user-friendly categories."""
+    msg = str(exc).lower()
+    if "private" in msg or "this account is private" in msg:
+        return "private_account"
+    if "login" in msg or "401" in msg or "unauthorized" in msg:
+        return "login_required"
+    if "geo" in msg or "not available in your country" in msg:
+        return "geo_restricted"
+    if "not found" in msg or "404" in msg or "deleted" in msg:
+        return "deleted_or_unavailable"
+    if "unsupported url" in msg or "invalid" in msg:
+        return "invalid_url"
+    if "timed out" in msg or "timeout" in msg or "network" in msg:
+        return "network_error"
+    if "ffmpeg" in msg and ("not found" in msg or "could not find" in msg):
+        return "ffmpeg_missing"
+    return "unknown_error"
+
+
+def _validate_ffmpeg_executable(candidate: Path) -> bool:
+    """Verify that the candidate is a working ffmpeg executable."""
+    try:
+        result = subprocess.run(
+            [str(candidate), "-version"], capture_output=True, text=True, timeout=10
+        )
+        return result.returncode == 0 and "ffmpeg version" in result.stdout.lower()
+    except Exception:
+        return False
+
+
+def download_with_ytdlp(url: str, output_path: Path, ffmpeg_path: Optional[str]) -> Path:
+    """Download using yt-dlp, merging video+audio into MP4.
+
+    Uses format selection: "bv*+ba/b" and merge_output_format="mp4".
+    Raises detailed exceptions on failure.
+    """
+    if yt_dlp is None:
+        raise RuntimeError("yt-dlp is not installed")
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Configure yt-dlp options
+    ydl_opts: Dict = {
+        "format": "bv*+ba/b",
+        "merge_output_format": "mp4",
+        "outtmpl": str(output_path),
+        "noplaylist": True,
+        "quiet": False,
+        "no_warnings": True,
+    }
+
+    if ffmpeg_path:
+        # Use the ffmpeg executable path when possible; yt-dlp accepts either
+        # the binary file or the directory containing the binary.
+        ffmpeg_path = str(Path(ffmpeg_path).resolve())
+        ydl_opts["ffmpeg_location"] = ffmpeg_path
+        ydl_opts["prefer_ffmpeg"] = True
+        print(f"yt-dlp ffmpeg_location: {ffmpeg_path}")
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Extract info first to present choices and detect separate streams
+            info = ydl.extract_info(url, download=False)
+
+            # Logging selected or available formats
             if isinstance(info, dict):
-                formats = info.get("formats") or []
+                if info.get("requested_formats"):
+                    vfmt = info["requested_formats"][0]
+                    afmt = info["requested_formats"][1] if len(info["requested_formats"]) > 1 else None
+                    print("Selected video format:", vfmt.get("format_id"), vfmt.get("ext"), vfmt.get("format"))
+                    if afmt:
+                        print("Selected audio format:", afmt.get("format_id"), afmt.get("ext"), afmt.get("format"))
+                else:
+                    print("Selected format:", info.get("format"))
 
-                for fmt in reversed(formats):
-                    if (
-                        fmt.get("vcodec") not in (None, "none")
-                        and fmt.get("acodec") not in (None, "none")
-                    ):
-                        return fmt["url"]
+            print("Starting download with yt-dlp...")
+            # This will perform download and merging using configured ffmpeg
+            ydl.download([url])
 
-                if info.get("url"):
-                    return info.get("url")
+            print(f"Download complete: {output_path}")
+            return output_path
 
-                raise RuntimeError("No format containing audio and video found.")
-            raise RuntimeError("No downloadable video URL was found")
-        except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(f"yt-dlp fallback failed: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001 - map yt-dlp exceptions
+        kind = classify_error(exc)
+        raise RuntimeError(f"yt-dlp download failed ({kind}): {exc}") from exc
+
+
+def fetch_instagram_media(url: str) -> str:
+    """Fallback GraphQL extraction for video URL. Kept for legacy fallback only.
+
+    Returns a direct video URL (may be DASH/video-only). Prefer yt-dlp instead.
+    """
+    shortcode = extract_shortcode(url)
 
     request_url = "https://www.instagram.com/graphql/query"
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (Linux; Android 11; SAMSUNG SM-G973U) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/14.2 Chrome/87.0.4280.141 Mobile Safari/537.36",
-        "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.5",
+        "User-Agent": "Mozilla/5.0",
         "Content-Type": "application/x-www-form-urlencoded",
-        "X-FB-Friendly-Name": "PolarisPostActionLoadPostQueryQuery",
-        "X-BLOKS-VERSION-ID": "0d99de0d13662a50e0958bcb112dd651f70dea02e1859073ab25f8f2a477de96",
-        "X-CSRFToken": "uy8OpI1kndx4oUHjlHaUfu",
-        "X-IG-App-ID": "1217981644879628",
-        "X-FB-LSD": "AVrqPT0gJDo",
-        "X-ASBD-ID": "359341",
-        "Sec-GPC": "1",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-origin",
-        "Pragma": "no-cache",
-        "Cache-Control": "no-cache",
         "Referer": f"https://www.instagram.com/p/{shortcode}/",
     }
 
@@ -143,217 +253,53 @@ def fetch_instagram_media(url: str) -> str:
     except json.JSONDecodeError as exc:
         raise RuntimeError("Unexpected response from Instagram") from exc
 
-    if not isinstance(payload, dict):
-        raise RuntimeError(f"Unexpected Instagram payload format: {type(payload).__name__}")
-
     data = payload.get("data")
     if not isinstance(data, dict):
-        errors = payload.get("errors")
-        detail = json.dumps(payload, ensure_ascii=False)[:1000]
-        if errors:
-            raise RuntimeError(f"Instagram returned an error: {errors}")
-        raise RuntimeError(f"Post not found or not accessible. Response: {detail}")
+        raise RuntimeError("Post not found or not accessible (GraphQL)")
 
     media = data.get("xdt_shortcode_media") or data.get("shortcode_media")
-    if not isinstance(media, dict):
-        detail = json.dumps(payload, ensure_ascii=False)[:1000]
-        raise RuntimeError(f"Instagram response did not contain video media data. Response: {detail}")
-    if not media.get("is_video"):
-        raise RuntimeError("The URL does not point to a video")
+    if not isinstance(media, dict) or not media.get("is_video"):
+        raise RuntimeError("The URL does not point to a video (GraphQL)")
 
     video_url = media.get("video_url")
     if not video_url:
-        raise RuntimeError("Video URL not found in Instagram response")
+        raise RuntimeError("Video URL not found in Instagram GraphQL response")
 
     return video_url
 
 
-def download_file(url: str, output_path: Path) -> None:
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-    }
-    req = Request(url, headers=headers)
+def download_instagram(url: str, output_path: str = "downloaded_video.mp4") -> Path:
+    """Top-level helper: try yt-dlp first, falling back to GraphQL when necessary."""
+    outp = Path(output_path)
 
-    try:
-        with urlopen(req, timeout=60) as response, output_path.open("wb") as file_handle:
-            shutil.copyfileobj(response, file_handle)
-    except HTTPError as exc:
-        raise RuntimeError(f"Download failed with status {exc.code}") from exc
-    except URLError as exc:
-        raise RuntimeError(f"Download network error: {exc}") from exc
+    ffmpeg_exec = find_ffmpeg_binary()
+    if ffmpeg_exec is None:
+        print("Warning: FFmpeg not found. yt-dlp may not be able to merge separate streams.")
 
-
-def select_yt_dlp_format(info: dict) -> str | None:
-    formats = info.get("formats") or []
-    if not formats:
-        return None
-
-    combined_formats = [
-        fmt
-        for fmt in formats
-        if fmt.get("vcodec") not in (None, "none") and fmt.get("acodec") not in (None, "none")
-    ]
-    if combined_formats:
-        combined_formats.sort(key=lambda fmt: (fmt.get("tbr") or 0, fmt.get("height") or 0), reverse=True)
-        return combined_formats[0].get("format_id")
-
-    return "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]"
-
-
-def find_ffmpeg_binary() -> str | None:
-    ffmpeg_binary = shutil.which("ffmpeg") or shutil.which("ffmpeg.exe")
-    if ffmpeg_binary:
-        return ffmpeg_binary
-
-    if imageio_ffmpeg is not None:
-        try:
-            return imageio_ffmpeg.get_ffmpeg_exe()
-        except Exception:  # noqa: BLE001
-            return None
-
-    return None
-
-
-def has_gstreamer() -> bool:
-    return shutil.which("gst-launch-1.0") is not None
-
-
-def download_with_gstreamer(url: str, output_path: Path) -> Path:
-    if yt_dlp is None:
-        raise RuntimeError("yt-dlp is required for the GStreamer path")
-
-    if not has_gstreamer():
-        raise RuntimeError("GStreamer is not installed or gst-launch-1.0 is not on PATH")
-
-    try:
-        with yt_dlp.YoutubeDL({"quiet": True, "skip_download": True, "noplaylist": True}) as ydl:
-            info = ydl.extract_info(url, download=False)
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"yt-dlp metadata lookup failed: {exc}") from exc
-
-    if not isinstance(info, dict):
-        raise RuntimeError("yt-dlp metadata lookup failed")
-
-    formats = info.get("formats") or []
-    video_formats = [
-        fmt
-        for fmt in formats
-        if fmt.get("vcodec") not in (None, "none") and fmt.get("acodec") in (None, "none")
-    ]
-    audio_formats = [
-        fmt
-        for fmt in formats
-        if fmt.get("vcodec") in (None, "none") and fmt.get("acodec") not in (None, "none")
-    ]
-
-    if not video_formats or not audio_formats:
-        raise RuntimeError("No separate video/audio formats were found for GStreamer muxing")
-
-    best_video = max(video_formats, key=lambda fmt: (fmt.get("height") or 0, fmt.get("tbr") or 0))
-    best_audio = max(audio_formats, key=lambda fmt: fmt.get("tbr") or 0)
-
-    with tempfile.TemporaryDirectory(prefix="ig-gst-", dir=str(output_path.parent)) as temp_dir:
-        temp_dir_path = Path(temp_dir)
-        temp_video_path = temp_dir_path / "video.mp4"
-        temp_audio_path = temp_dir_path / "audio.m4a"
-
-        video_opts = {
-            "quiet": True,
-            "no_warnings": True,
-            "noplaylist": True,
-            "format": best_video.get("format_id"),
-            "outtmpl": str(temp_video_path),
-            "restrictfilenames": True,
-        }
-        audio_opts = {
-            "quiet": True,
-            "no_warnings": True,
-            "noplaylist": True,
-            "format": best_audio.get("format_id"),
-            "outtmpl": str(temp_audio_path),
-            "restrictfilenames": True,
-        }
-
-        with yt_dlp.YoutubeDL(video_opts) as ydl:
-            ydl.download([url])
-        with yt_dlp.YoutubeDL(audio_opts) as ydl:
-            ydl.download([url])
-
-        command = (
-            f'gst-launch-1.0 -e filesrc location="{temp_video_path}" ! qtdemux name=demux '
-            'demux.video_0 ! queue ! h264parse ! avdec_h264 ! videoconvert ! x264enc ! mp4mux name=mux ! filesink location="'
-            f'{output_path}" demux.audio_0 ! queue ! aacparse ! avdec_aac ! audioconvert ! audioresample ! voaacenc ! mux.'
-        )
-
-        completed = subprocess.run(command, shell=True, capture_output=True, text=True)
-        if completed.returncode != 0:
-            stderr = completed.stderr.strip() or completed.stdout.strip() or "unknown GStreamer error"
-            raise RuntimeError(f"GStreamer muxing failed: {stderr}")
-
-    return output_path
-
-
-def download_instagram_post(url: str, output_path: Path) -> Path:
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
+    # Prefer yt-dlp
     if yt_dlp is not None:
-        if has_gstreamer():
-            try:
-                return download_with_gstreamer(url, output_path)
-            except Exception as exc:  # noqa: BLE001
-                print(f"GStreamer path failed: {exc}", file=sys.stderr)
-
-        options = {
-            "quiet": True,
-            "no_warnings": True,
-            "noplaylist": True,
-            "outtmpl": str(output_path),
-            "restrictfilenames": True,
-        }
-
-        ffmpeg_path = find_ffmpeg_binary()
-        if ffmpeg_path:
-            options["ffmpeg_location"] = ffmpeg_path
-
         try:
-            with yt_dlp.YoutubeDL({**options, "skip_download": True}) as ydl:
-                info = ydl.extract_info(url, download=False)
-        except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(f"yt-dlp metadata lookup failed: {exc}") from exc
+            result = download_with_ytdlp(url, outp, ffmpeg_exec)
+            print(f"Final output: {result}")
+            return result
+        except Exception as exc:
+            print(f"yt-dlp failed: {exc}")
+            print("Falling back to GraphQL extraction...")
 
-        selected_format = None
-        if isinstance(info, dict):
-            selected_format = select_yt_dlp_format(info)
-
-        if selected_format:
-            options["format"] = selected_format
-        else:
-            options["format"] = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]"
-            options["merge_output_format"] = "mp4"
-
-        with yt_dlp.YoutubeDL(options) as ydl:
-            ydl.download([url])
-        return output_path
-
+    # Fallback: use GraphQL direct download (may be video-only)
     video_url = fetch_instagram_media(url)
-    download_file(video_url, output_path)
-    return output_path
+    # Download with urllib as a last resort (video-only possibility)
+    print("Downloading direct video URL (GraphQL fallback). This may be video-only if audio is separate.")
+    outp.parent.mkdir(parents=True, exist_ok=True)
+    req = Request(video_url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urlopen(req, timeout=60) as response, outp.open("wb") as fh:
+            shutil.copyfileobj(response, fh)
+    except Exception as exc:
+        kind = classify_error(exc)
+        raise RuntimeError(f"Fallback download failed ({kind}): {exc}") from exc
+
+    print(f"Saved fallback output to: {outp}")
+    return outp
 
 
-# main fn\
-
-
-# def main():
-#     url = "https://www.instagram.com/p/C3cKS8NvVLu/"
-#     output_path = Path("downloaded_video.mp4")
-
-#     try:
-#         downloaded_file = download_instagram_post(url, output_path)
-#         print(f"Video downloaded successfully: {downloaded_file}")
-#     except Exception as e:
-#         print(f"Error: {e}")
-#         sys.exit(1)
-
-# if __name__ == "__main__":
-#     main()
