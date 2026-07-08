@@ -302,4 +302,7 @@ def download_instagram(url: str, output_path: str = "downloaded_video.mp4") -> P
     print(f"Saved fallback output to: {outp}")
     return outp
 
+def download_instagram_post(url: str, output_path: str | Path = "downloaded_video.mp4") -> Path:
+    """Backward compatibility wrapper for legacy callers."""
+    return download_instagram(url, output_path)
 
