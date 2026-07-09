@@ -67,6 +67,10 @@ def process_video(url, username):
             compress.compress_video(temp_file_path, compress_path)
             print(f"Compressed video saved as: {compress_path}")
             temp_file_path = compress_path  # Update temp_file_path to point to the compressed video
+            if compress.check_video_size(temp_file_path):
+                    print(f"{temp_file_path} is less than or equal to 10 MB.")
+            else:
+                print(f"{temp_file_path} is more than  10 MB.")
         except Exception as e:
             print(f"Compression failed for {temp_file_path}: {e}")
 
