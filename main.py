@@ -6,7 +6,7 @@ import download_instagram_video
 import datetime
 import os
 import shutil
-
+import compress
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
