@@ -33,17 +33,14 @@ async def reel(ctx, link: str):
    
    
 
-
-def is_download_folder_empty(download_dir="download"):
-    download_path = Path(download_dir)
-    download_path.mkdir(parents=True, exist_ok=True)
-    return not any(download_path.iterdir())    
-  
-
 async def fetch_reels_video(url, username):
     return await asyncio.to_thread(process_video, url, username)
 
 
+def is_download_folder_empty(download_dir="download"):
+    download_path = Path(download_dir)
+    download_path.mkdir(parents=True, exist_ok=True)
+    return not any(download_path.iterdir())  
 
 def flush_download_folder(download_dir="download"):
     download_path = Path(download_dir)
