@@ -12,6 +12,7 @@ ffmpeg_loc = os.environ.get("FFMPEG_LOC", "")
 
 def resolve_ffmpeg_executable():
     ffmpeg_exec = shutil.which("ffmpeg")
+    print(f"Using ffmpeg: {ffmpeg_exec}")
     if ffmpeg_exec:
         return ffmpeg_exec
 
@@ -81,6 +82,7 @@ def compress_video_pyav(input_path, output_path, bitrate="3500k"):
 
 
 def compress_video_ffmpeg(input_path, output_path, bitrate="3500k", target_size_mb=10):
+    print("using ffmpeg")
     ffmpeg_exec = resolve_ffmpeg_executable()
     if not ffmpeg_exec:
         raise FileNotFoundError("ffmpeg executable not found")
@@ -151,24 +153,4 @@ def compress_video(input_path, output_path, bitrate="4000k", target_size_mb=10):
 
 
 
-# def compressmain():
-#     folder_path = "downloads"
-#     os.makedirs(folder_path, exist_ok=True)
 
-#     for filename in os.listdir(folder_path):
-#         file_path = os.path.join(folder_path, filename)
-#         if os.path.isfile(file_path):
-#             if check_video_size(file_path):
-#                 print(f"{filename} is less than or equal to 10 MB.")
-#             else:
-#                 print(f"{filename} is larger than 10 MB. Compressing...")
-#                 compressed_file_path = os.path.join(folder_path, f"compressed_{filename}")
-#                 try:
-#                     compress_video(file_path, compressed_file_path)
-#                     print(f"Compressed video saved as: {compressed_file_path}")
-#                 except Exception as e:
-#                     print(f"Compression failed for {filename}: {e}")
-
-
-
-# compressmain()
