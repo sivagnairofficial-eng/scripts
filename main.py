@@ -5,6 +5,7 @@ from discord.ext import commands
 import download_instagram_video
 import datetime
 import os
+import shutil
 
 
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -35,12 +36,40 @@ async def reel(ctx, link: str):
 async def fetch_reels_video(url, username):
     return await asyncio.to_thread(process_video, url, username)
 
+
+
+def flush_download_folder(download_dir="download"):
+    download_path = Path(download_dir)
+    download_path.mkdir(parents=True, exist_ok=True)
+
+    for item in download_path.iterdir():
+        if item.is_file() or item.is_symlink():
+            item.unlink()
+        elif item.is_dir():
+            shutil.rmtree(item)
+
+    return download_path
+
+
 def process_video(url, username):
     download_dir = Path("download")
     download_dir.mkdir(parents=True, exist_ok=True)
 
     temp_file_path = Path(f"download/{username}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_temp_video.mp4")
     download_instagram_video.download_instagram_post(url, temp_file_path)
+    compress_path = Path(f"download/{username}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_compressed_video.mp4")
+    if compress.check_video_size(temp_file_path):
+                    print(f"{temp_file_path} is less than or equal to 10 MB.")
+    else:
+        print(f"{temp_file_path} is larger than 10 MB. Compressing...")
+        
+        try:
+            compress.compress_video(temp_file_path, compress_path)
+            print(f"Compressed video saved as: {compress_path}")
+            temp_file_path = compress_path  # Update temp_file_path to point to the compressed video
+        except Exception as e:
+            print(f"Compression failed for {temp_file_path}: {e}")
+
 
     return temp_file_path
 
