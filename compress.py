@@ -2,7 +2,12 @@
 
 import os
 import shutil
+import tempfile
 import av
+import subprocess
+
+
+ffmpeg_loc = 'C:\\Users\\sivag\\Downloads\\ffmpeg-8.1.2-essentials_build\\ffmpeg-8.1.2-essentials_build\\bin'
 
 def check_video_size(file_path):
     file_size_bytes = os.path.getsize(file_path)
@@ -11,12 +16,15 @@ def check_video_size(file_path):
 
 
 def has_ffmpeg():
-    return shutil.which("ffmpeg") is not None
+    if shutil.which("ffmpeg"):
+        return True
+    ffmpeg_path = os.path.join(ffmpeg_loc, "ffmpeg.exe")
+    return os.path.exists(ffmpeg_path)
 
 
 
 
-def compress_video(input_path, output_path, bitrate="4000k"):
+def compress_video_pyav(input_path, output_path, bitrate="3500k"):
     input_container = av.open(input_path)
 
     output_container = av.open(output_path, mode="w")
@@ -46,21 +54,78 @@ def compress_video(input_path, output_path, bitrate="4000k"):
     output_container.close()
 
 
+def compress_video_ffmpeg(input_path, output_path, bitrate="3500k", target_size_mb=10):
+    # Determine ffmpeg executable
+    ffmpeg_exec = shutil.which("ffmpeg")
+    if not ffmpeg_exec:
+        candidate = os.path.join(ffmpeg_loc, "ffmpeg.exe")
+        if os.path.exists(candidate):
+            ffmpeg_exec = candidate
+
+    if not ffmpeg_exec:
+        raise FileNotFoundError("ffmpeg executable not found")
+
+    target_size_bytes = int(target_size_mb * 1024 * 1024)
+    bitrate_value = int(bitrate[:-1]) if bitrate.endswith("k") else int(bitrate)
+    current_bitrate = bitrate_value
+
+    while True:
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_file:
+            temp_output_path = temp_file.name
+
+        try:
+            cmd = [
+                ffmpeg_exec,
+                "-y",
+                "-i",
+                input_path,
+                "-c:v",
+                "libx264",
+                "-b:v",
+                f"{current_bitrate}k",
+                "-preset",
+                "veryfast",
+                "-pix_fmt",
+                "yuv420p",
+                "-fs",
+                str(target_size_bytes),
+                temp_output_path,
+            ]
+
+            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if result.returncode != 0:
+                raise RuntimeError(f"ffmpeg failed: {result.stderr.decode(errors='ignore')}")
+
+            if os.path.exists(temp_output_path):
+                actual_size = os.path.getsize(temp_output_path)
+                if actual_size <= target_size_bytes:
+                    if os.path.exists(output_path):
+                        os.remove(output_path)
+                    os.replace(temp_output_path, output_path)
+                    return
+
+            if os.path.exists(temp_output_path):
+                os.remove(temp_output_path)
+
+            if current_bitrate <= 500:
+                raise RuntimeError(f"Unable to compress video to {target_size_mb}MB or less")
+
+            current_bitrate = max(500, int(current_bitrate * 0.9))
+        except Exception:
+            if os.path.exists(temp_output_path):
+                os.remove(temp_output_path)
+            raise
 
 
-def compressmain():
-    folder_path = "downloads"
-    os.makedirs(folder_path, exist_ok=True)
+def compress_video(input_path, output_path, bitrate="4000k", target_size_mb=10):
+    if has_ffmpeg():
+        try:
+            compress_video_ffmpeg(input_path, output_path, bitrate=bitrate, target_size_mb=target_size_mb)
+            return
+        except Exception:
+            # If ffmpeg fails, fall back to PyAV implementation
+            pass
 
-    for filename in os.listdir(folder_path):
-        file_path = os.path.join(folder_path, filename)
-        if os.path.isfile(file_path):
-            if check_video_size(file_path):
-                print(f"{filename} is less than or equal to 10 MB.")
-            else:
-                print(f"{filename} is larger than 10 MB. Compressing...")
-                compressed_file_path = os.path.join(folder_path, f"compressed_{filename}")
-                compress_video(file_path, compressed_file_path)
-                print(f"Compressed video saved as: {compressed_file_path}")
+    compress_video_pyav(input_path, output_path, bitrate=bitrate)
 
 
