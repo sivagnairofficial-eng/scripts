@@ -25,12 +25,19 @@ async def reel(ctx, link: str):
     await send_video(ctx, fetched_video_path)
 
     await ctx.message.delete()
-   
-    if Path(fetched_video_path).exists():
-        os.remove(fetched_video_path)
-
-
     
+    flush_download_folder()
+    
+    if not is_download_folder_empty():
+        print("Download folder is not empty. Clearing it before processing.")
+   
+   
+
+
+def is_download_folder_empty(download_dir="download"):
+    download_path = Path(download_dir)
+    download_path.mkdir(parents=True, exist_ok=True)
+    return not any(download_path.iterdir())    
   
 
 async def fetch_reels_video(url, username):
