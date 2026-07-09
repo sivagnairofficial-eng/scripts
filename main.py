@@ -29,7 +29,7 @@ async def reel(ctx, link: str):
     flush_download_folder()
     
     if not is_download_folder_empty():
-        print("Download folder is not empty. Clearing it before processing.")
+        print("Download folder is not empty")
    
    
 
@@ -51,7 +51,8 @@ def flush_download_folder(download_dir="download"):
             item.unlink()
         elif item.is_dir():
             shutil.rmtree(item)
-
+            
+    print("FLUSHED!!!!!")
     return download_path
 
 
@@ -70,11 +71,13 @@ def process_video(url, username):
         try:
             compress.compress_video(temp_file_path, compress_path)
             print(f"Compressed video saved as: {compress_path}")
-            temp_file_path = compress_path  # Update temp_file_path to point to the compressed video
+            temp_file_path = compress_path  
+           
             if compress.check_video_size(temp_file_path):
-                    print(f"{temp_file_path} is less than or equal to 10 MB.")
+                    print(f"{temp_file_path} is less than or equal to 10 MB ++++++")
             else:
-                print(f"{temp_file_path} is more than  10 MB.")
+                print(f"{temp_file_path} is more than  10 MB.!!!!!!")
+                
         except Exception as e:
             print(f"Compression failed for {temp_file_path}: {e}")
 
