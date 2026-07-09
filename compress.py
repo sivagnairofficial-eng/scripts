@@ -7,7 +7,7 @@ import av
 import subprocess
 
 
-ffmpeg_loc = 'C:\\Users\\sivag\\Downloads\\ffmpeg-8.1.2-essentials_build\\ffmpeg-8.1.2-essentials_build\\bin'
+ffmpeg_loc =  os.environ.get("FFMPEG_PATH", "")
 
 def check_video_size(file_path):
     file_size_bytes = os.path.getsize(file_path)
