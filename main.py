@@ -86,7 +86,7 @@ def process_video(url, username):
                 size = os.path.getsize(compress_path) / (1024 * 1024)
                 print(f"{compress_path} is more than  10 MB.!!!!!! Further compressing {size}")
                 os.remove(compress_path)
-                compress.compress_video(temp_file_path, compress_path)
+                compress.recompress_video(temp_file_path, compress_path)
                 
             temp_file_path = compress_path    
         except Exception as e:
