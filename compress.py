@@ -54,7 +54,34 @@ def has_ffmpeg():
     return resolve_ffmpeg_executable() is not None
 
 
+def recompress_video(input_path, output_path):
+    ffmpeg_exec = resolve_ffmpeg_executable()
+    if not ffmpeg_exec:
+        raise FileNotFoundError("ffmpeg executable not found")
 
+    cmd = [
+        ffmpeg_exec,
+        "-y",
+        "-i", input_path,
+
+        # Video
+        "-c:v", "libx264",
+        "-preset", "veryslow",
+        "-crf", "35",
+        "-vf", "scale='min(640,iw)':-2",
+        "-r", "15",
+
+        # Audio
+        "-c:a", "aac",
+        "-b:a", "64k",
+
+        # Optimize MP4
+        "-movflags", "+faststart",
+
+        output_path,
+    ]
+
+    subprocess.run(cmd, check=True)
 
 def compress_video_pyav(input_path, output_path, bitrate="3500k"):
     input_container = av.open(input_path)
