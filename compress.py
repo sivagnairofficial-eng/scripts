@@ -56,6 +56,33 @@ def has_ffmpeg():
 
 def recompress_video(input_path, output_path):
     ffmpeg_exec = resolve_ffmpeg_executable()
+    
+    container = av.open(input_path)
+    duration_seconds = float(container.duration / av.time_base)
+    container.close()
+    
+    target_size_mb = 10
+    target_size_bytes = target_size_mb * 1024 * 1024
+    
+    audio_bitrate = 96_000  # 96 kbps
+    
+    target_video_bitrate = int((target_size_bytes * 8 / duration_seconds) - audio_bitrate)
+    
+    # Prevent unreasonably low values
+    target_video_bitrate = max(target_video_bitrate, 100_000)container = av.open(input_path)
+    duration_seconds = float(container.duration / av.time_base)
+    container.close()
+    
+    target_size_mb = 10
+    target_size_bytes = target_size_mb * 1024 * 1024
+    
+    audio_bitrate = 96_000  # 96 kbps
+    
+    target_video_bitrate = int((target_size_bytes * 8 / duration_seconds) - audio_bitrate)
+    
+    # Prevent unreasonably low values
+    target_video_bitrate = max(target_video_bitrate, 100_000)
+    
     if not ffmpeg_exec:
         raise FileNotFoundError("ffmpeg executable not found")
 
@@ -113,7 +140,7 @@ def compress_video_pyav(input_path, output_path, bitrate="3500k"):
     output_container.close()
 
 
-def compress_video_ffmpeg(input_path, output_path, bitrate="3500k", target_size_mb=10):
+def compress_video_ffmpeg(input_path, output_path, bitrate="3500k", target_size_mb=9):
     ffmpeg_exec = resolve_ffmpeg_executable()
     print(f"Using ffmpeg: {ffmpeg_exec}")
     if not ffmpeg_exec:
