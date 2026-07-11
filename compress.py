@@ -69,7 +69,8 @@ def recompress_video(input_path, output_path):
     target_video_bitrate = int((target_size_bytes * 8 / duration_seconds) - audio_bitrate)
     
     # Prevent unreasonably low values
-    target_video_bitrate = max(target_video_bitrate, 100_000)container = av.open(input_path)
+    target_video_bitrate = max(target_video_bitrate, 100_000)
+    container = av.open(input_path)
     duration_seconds = float(container.duration / av.time_base)
     container.close()
     
