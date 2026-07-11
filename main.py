@@ -22,15 +22,20 @@ async def reel(ctx, link: str):
     username = ctx.author.name
     
     fetched_video_path = await fetch_reels_video(link, username)
-    await send_video(ctx, fetched_video_path)
-
-    await ctx.message.delete()
-    
-    flush_download_folder()
-    
-    if not is_download_folder_empty():
-        print("Download folder is not empty")
+    try:
+        await send_video(ctx, fetched_video_path)
+       
+        await ctx.message.delete()
+        
+        flush_download_folder()
+        
+        if not is_download_folder_empty():
+            print("Download folder is not empty")
    
+    except Exception as e:
+        size = compress.check_video_size(fetched_video_path)
+        await ctx.send(f"File is more than 10MB.It is {size} after compression")
+        flush_download_folder()
    
 
 async def fetch_reels_video(url, username):
