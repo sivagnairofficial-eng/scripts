@@ -33,7 +33,7 @@ async def reel(ctx, link: str):
             print("Download folder is not empty")
    
     except Exception as e:
-        size = os.path.getsize(fetched_video_path / (1024 * 1024))
+        size = os.path.getsize(fetched_video_path) / (1024 * 1024)
         await ctx.message.delete()
         await ctx.send(f"File is more than 10MB.It is {size} after compression")
         flush_download_folder()
@@ -72,7 +72,7 @@ def process_video(url, username):
     if compress.check_video_size(temp_file_path):
                     print(f"{temp_file_path} is less than or equal to 10 MB.")
     else:
-        size = os.path.getsize(temp_file_path / (1024 * 1024))
+        size = os.path.getsize(temp_file_path) / (1024 * 1024)
         print(f"{temp_file_path} is larger than 10 MB.{size} MB Compressing...")
         
         try:
@@ -83,7 +83,7 @@ def process_video(url, username):
             if compress.check_video_size(compress_path):
                     print(f"{compress_path} is less than or equal to 10 MB ++++++")
             else:
-                size = os.path.getsize(compress_path / (1024 * 1024))
+                size = os.path.getsize(compress_path) / (1024 * 1024)
                 print(f"{compress_path} is more than  10 MB.!!!!!! Further compressing {size}")
                 os.remove(compress_path)
                 compress.compress_video(temp_file_path, compress_path)
